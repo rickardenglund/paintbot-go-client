@@ -8,7 +8,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"paintbot-client/models"
-	"paintbot-client/utilities"
+	"paintbot-client/utilities/time"
 )
 
 func main() {
@@ -51,8 +51,12 @@ func recv(conn *websocket.Conn) (done bool) {
 		case "se.cygni.paintbot.api.event.GameLinkEvent", "se.cygni.paintbot.api.event.GameStartingEvent":
 			fmt.Printf("Received: %s\n", msg)
 		case "se.cygni.paintbot.api.event.MapUpdateEvent":
-			fmt.Printf("Map update: %s\n", msg)
-			calculateMove(conn, msg)
+			updateEvent := models.MapUpdateEvent{}
+			if err := json.Unmarshal(msg, &updateEvent); err != nil {
+				panic(err)
+			}
+			fmt.Printf("Map update: %+v\n", updateEvent)
+			calculateMove(conn, updateEvent)
 		case "se.cygni.paintbot.api.event.GameEndedEvent":
 			fmt.Printf("Game ended: %s\n", msg)
 			return true
@@ -61,21 +65,20 @@ func recv(conn *websocket.Conn) (done bool) {
 	return false
 }
 
-func calculateMove(conn *websocket.Conn, msg []byte) {
-	updateEvent := models.MapUpdateEvent{}
-	if err := json.Unmarshal(msg, &updateEvent); err != nil {
-		panic(err)
-	}
-
+func calculateMove(conn *websocket.Conn, updateEvent models.MapUpdateEvent) {
 	move := models.RegisterMoveEvent{
 		Type:              "se.cygni.paintbot.api.request.RegisterMove",
 		GameID:            updateEvent.GameID,
 		GameTick:          updateEvent.GameTick,
 		Direction:         "LEFT",
 		ReceivingPlayerID: updateEvent.ReceivingPlayerID,
-		Timestamp:         utilities.Now(),
+		Timestamp:         time.Now(),
 	}
 
+	sendMove(move, conn)
+}
+
+func sendMove(move models.RegisterMoveEvent, conn *websocket.Conn) {
 	if marshal, err := json.Marshal(move); err != nil {
 		panic(err)
 	} else {
@@ -110,7 +113,7 @@ func registerPlayer(conn *websocket.Conn) {
 			PointsPerTick:                  false,
 		},
 		ReceivingPlayerID: nil,
-		Timestamp:         utilities.Now(),
+		Timestamp:         time.Now(),
 	}
 
 	if err := conn.WriteJSON(registerMSG); err != nil {
@@ -128,7 +131,7 @@ func sendClientInfo(conn *websocket.Conn, msg models.GameMessage) {
 		OperatingSystemVersion: "",
 		ClientVersion:          "0.1",
 		ReceivingPlayerID:      msg.ReceivingPlayerID,
-		Timestamp:              utilities.Now(),
+		Timestamp:              time.Now(),
 	}); err != nil {
 		panic(err)
 	}
@@ -138,7 +141,7 @@ func StartGame(conn *websocket.Conn) {
 	startGame := models.StartGameEvent{
 		Type:              "se.cygni.paintbot.api.request.StartGame",
 		ReceivingPlayerID: nil,
-		Timestamp:         utilities.Now(),
+		Timestamp:         time.Now(),
 	}
 
 	if err := conn.WriteJSON(startGame); err != nil {
