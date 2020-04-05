@@ -8,6 +8,7 @@ type MapUtility struct {
 	CurrentPlayerID string
 }
 
+// returns true if the current player can perform the given action given no action for all other players
 func (u *MapUtility) CanIMoveInDirection(action models.Action) bool {
 	info := u.GetMyCharacterInfo()
 
@@ -23,7 +24,7 @@ func (u *MapUtility) CanIMoveInDirection(action models.Action) bool {
 		return true
 	}
 
-	pos := u.GetMyPosition()
+	pos := u.GetMyCoordinates()
 	pos = u.TranslateCoordinateByAction(action, pos)
 	return u.IsTileAvailableForMovementTo(pos)
 }
@@ -58,20 +59,24 @@ func (u *MapUtility) ListCoordinatesContainingObstacles() []models.Coordinates {
 	return u.ConvertPositionsToCoordinates(u.Map.ObstacleUpPositions)
 }
 
+// returns true if tile is walkable
 func (u *MapUtility) IsTileAvailableForMovementTo(coord models.Coordinates) bool {
 	tile := u.GetTileAt(coord)
 
-	return tile == models.Open || tile == models.PowerUp
+	return tile == models.Open || tile == models.PowerUp || tile == models.Player
 }
 
-func (u *MapUtility) GetMyPosition() models.Coordinates {
+// returns the coordinates of the current player
+func (u *MapUtility) GetMyCoordinates() models.Coordinates {
 	return u.ConvertPositionToCoordinates(u.GetMyCharacterInfo().Position)
 }
 
+// returns information about the current player
 func (u *MapUtility) GetMyCharacterInfo() models.CharacterInfo {
 	return u.GetCharacterInfo(u.CurrentPlayerID)
 }
 
+// returns information about the given player
 func (u *MapUtility) GetCharacterInfo(playerID string) models.CharacterInfo {
 	for i := range u.Map.CharacterInfos {
 		if u.Map.CharacterInfos[i].ID == playerID {
@@ -81,12 +86,15 @@ func (u *MapUtility) GetCharacterInfo(playerID string) models.CharacterInfo {
 	panic("Trying to find invalid playerID: " + playerID)
 }
 
+// Returns true if the coordinate is withing the game field
 func (u *MapUtility) IsCoordinatesOutOfBounds(coord models.Coordinates) bool {
 	w := u.Map.Width
 	h := u.Map.Height
 	return coord.X < 0 || coord.Y < 0 || coord.X >= w || coord.Y >= h
 }
 
+// returns the type of object at the given coordinates
+// returns OBSTACLE if the coordinate is out of bounds
 func (u *MapUtility) GetTileAt(coordinates models.Coordinates) models.Tile {
 	if u.IsCoordinatesOutOfBounds(coordinates) {
 		return models.Obstacle
@@ -137,6 +145,7 @@ func (u *MapUtility) ConvertCoordinatesToPosition(coordinates models.Coordinates
 	return coordinates.Y*w + coordinates.X
 }
 
+// converts a list of positions to coordinates
 func (u *MapUtility) ConvertPositionsToCoordinates(positions []int) []models.Coordinates {
 	coords := make([]models.Coordinates, len(positions))
 	for i := range positions {
@@ -145,6 +154,7 @@ func (u *MapUtility) ConvertPositionsToCoordinates(positions []int) []models.Coo
 	return coords
 }
 
+// converts a list of coordinates to positions
 func (u *MapUtility) ConvertCoordinatesToPositions(coordinates []models.Coordinates) []int {
 	positions := make([]int, len(coordinates))
 	for i := range coordinates {
@@ -159,8 +169,4 @@ func (u *MapUtility) getPlayerPositions() []int {
 		positions[i] = u.Map.CharacterInfos[i].Position
 	}
 	return positions
-}
-
-func (u *MapUtility) AmIStunned() bool {
-	return u.GetMyCharacterInfo().StunnedForGameTicks > 0
 }

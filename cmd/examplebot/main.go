@@ -33,6 +33,7 @@ func main() {
 var moves = []models.Action{models.Explode, models.Left, models.Down, models.Right, models.Up} //, models.Stay}
 var lastDir = 0
 
+// Implement your paintbot here
 func calculateMove(updateEvent models.MapUpdateEvent) models.Action {
 	utility := maputility.MapUtility{Map: updateEvent.Map, CurrentPlayerID: *updateEvent.ReceivingPlayerID}
 	me := utility.GetMyCharacterInfo()
