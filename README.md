@@ -21,7 +21,7 @@ For running your own server see [Paintbot Server Repository](https://github.com/
 
 ## Implementation
 
-You only need to implement when function in order to have your own bot up and running. see [ExampleBot](cmd/examplegot/main.go)
+You only need to implement when function in order to have your own bot up and running. see [ExampleBot](cmd/examplebot/main.go)
 
 ``` go
 func calculateMove(updateEvent models.MapUpdateEvent) models.Action {
