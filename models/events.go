@@ -146,10 +146,33 @@ type GameEndedEvent struct {
 	Timestamp         int     `json:"timestamp"`
 }
 
+type PlayerPoint struct {
+	Name     string `json:"name"`
+	PlayerID string `json:"playerId"`
+	Points   int    `json:"points"`
+}
+
+type TournamentEndedEvent struct {
+	Type              string        `json:"type"`
+	PlayerWinnerID    string        `json:"playerWinnerId"`
+	GameID            string        `json:"gameId"`
+	GameResult        []PlayerPoint `json:"gameResult"`
+	TournamentName    string        `json:"tournamentName"`
+	TournamentID      string        `json:"tournamentId"`
+	ReceivingPlayerID *string       `json:"receivingPlayerId"`
+	Timestamp         int           `json:"timestamp"`
+}
+
 type InvalidMessage struct {
 	Type              string  `json:"type"`
 	ErrorMessage      string  `json:"errorMessage"`
 	ReceivedMessage   string  `json:"receivedMessage"`
+	ReceivingPlayerID *string `json:"receivingPlayerId"`
+	Timestamp         int     `json:"timestamp"`
+}
+
+type HearbeatMessage struct {
+	Type              string  `json:"type"`
 	ReceivingPlayerID *string `json:"receivingPlayerId"`
 	Timestamp         int     `json:"timestamp"`
 }

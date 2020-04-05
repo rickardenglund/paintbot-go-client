@@ -27,7 +27,7 @@ func init() {
 }
 
 func main() {
-	basebot.Start("Simple Go Bot", calculateMove)
+	basebot.Start("Simple Go Bot", models.Training, calculateMove)
 }
 
 var moves = []models.Action{models.Explode, models.Left, models.Down, models.Right, models.Up} //, models.Stay}

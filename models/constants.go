@@ -19,3 +19,10 @@ const (
 	Player   Tile = "PLAYER"
 	Open     Tile = "OPEN"
 )
+
+type GameMode string
+
+const (
+	Tournament GameMode = "/tournament"
+	Training   GameMode = "/training"
+)

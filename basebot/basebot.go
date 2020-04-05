@@ -2,8 +2,9 @@ package basebot
 
 import (
 	"encoding/json"
-	"net/url"
+	"fmt"
 	"runtime"
+	"sync"
 
 	"github.com/gorilla/websocket"
 	log "github.com/sirupsen/logrus"
@@ -12,19 +13,13 @@ import (
 	"paintbot-client/utilities/timeHelper"
 )
 
-var u = url.URL{
-	Scheme: "ws",
-	Host:   "server.paintbot.cygni.se:80",
-	//Host: "localhost:8080",
-	Path: "/training",
-}
+var mux sync.Mutex
 
-func Start(playerName string, calculateMove func(event models.MapUpdateEvent) models.Action) {
-	log.Debugf("connecting to: %s\n", u.String())
-	conn, _, connectionError := websocket.DefaultDialer.Dial(u.String(), nil)
-	if connectionError != nil {
-		panic(connectionError)
-	}
+var gm models.GameMode
+
+func Start(playerName string, gameMode models.GameMode, calculateMove func(event models.MapUpdateEvent) models.Action) {
+	gm = gameMode
+	conn := getWebsocketConnection(gameMode)
 	defer conn.Close()
 
 	registerPlayer(conn, playerName)
@@ -41,40 +36,54 @@ func Start(playerName string, calculateMove func(event models.MapUpdateEvent) mo
 }
 
 func recv(conn *websocket.Conn, handleMapUpdate func(*websocket.Conn, models.MapUpdateEvent)) (done bool) {
-	if _, msg, err := conn.ReadMessage(); err != nil {
+	var msg []byte
+	var err error
+	if _, msg, err = conn.ReadMessage(); err != nil {
 		panic(err)
-	} else {
-		gameMSG := models.GameMessage{}
-		if err := json.Unmarshal(msg, &gameMSG); err != nil {
+	}
+
+	gameMSG := models.GameMessage{}
+	if err := json.Unmarshal(msg, &gameMSG); err != nil {
+		panic(err)
+	}
+
+	switch gameMSG.Type {
+	case "se.cygni.paintbot.api.exception.InvalidMessage":
+		panic("invalid message: " + string(msg))
+	case "se.cygni.paintbot.api.response.PlayerRegistered":
+		log.Debug("Player Registered\n")
+		sendClientInfo(conn, gameMSG)
+		go heartbeat(conn, gameMSG.ReceivingPlayerID)
+		StartGame(conn)
+	case "se.cygni.paintbot.api.event.GameLinkEvent", "se.cygni.paintbot.api.event.GameStartingEvent":
+		log.Infof("Received: %s\n", msg)
+	case "se.cygni.paintbot.api.event.MapUpdateEvent":
+		updateEvent := models.MapUpdateEvent{}
+		if err := json.Unmarshal(msg, &updateEvent); err != nil {
 			panic(err)
 		}
-
-		switch gameMSG.Type {
-		case "se.cygni.paintbot.api.exception.InvalidMessage":
-			panic("invalid message: " + string(msg))
-		case "se.cygni.paintbot.api.response.PlayerRegistered":
-			log.Debug("Player Registered\n")
-			sendClientInfo(conn, gameMSG)
-			StartGame(conn)
-		case "se.cygni.paintbot.api.event.GameLinkEvent", "se.cygni.paintbot.api.event.GameStartingEvent":
-			log.Infof("Received: %s\n", msg)
-		case "se.cygni.paintbot.api.event.MapUpdateEvent":
-			updateEvent := models.MapUpdateEvent{}
-			if err := json.Unmarshal(msg, &updateEvent); err != nil {
-				panic(err)
-			}
-			log.Debugf("Map update: %+v\n", updateEvent)
-			handleMapUpdate(conn, updateEvent)
-		case "se.cygni.paintbot.api.event.GameEndedEvent":
-			log.Infof("Game ended: %s\n", msg)
+		log.Debugf("Map update: %+v\n", updateEvent)
+		handleMapUpdate(conn, updateEvent)
+	case "se.cygni.paintbot.api.event.GameEndedEvent":
+		log.Infof("Game ended: %s\n", msg)
+		if gm == models.Training {
 			return true
 		}
+	case "se.cygni.paintbot.api.event.GameResultEvent":
+		log.Infof("Game result: %s", msg)
+	case "se.cygni.paintbot.api.event.TournamentEndedEvent":
+		log.Infof("Tournament result: %s", msg)
+		return true
+	case "se.cygni.paintbot.api.response.HeartBeatResponse":
+		log.Debug("Heatbeat response")
+	default:
+		panic(fmt.Sprintf("unknown message: %s\n", msg))
 	}
 	return false
 }
 
 func registerPlayer(conn *websocket.Conn, playerName string) {
-	registerMSG := models.RegisterPlayerEvent{
+	registerMSG := &models.RegisterPlayerEvent{
 		Type:       "se.cygni.paintbot.api.request.RegisterPlayer",
 		PlayerName: playerName,
 		GameSettings: models.GameSettings{
@@ -91,7 +100,7 @@ func registerPlayer(conn *websocket.Conn, playerName string) {
 			NOOFTicksStunned:               10,
 			StartObstacles:                 40,
 			StartPowerUps:                  41,
-			GameDurationInSeconds:          60,
+			GameDurationInSeconds:          15,
 			ExplosionRange:                 4,
 			PointsPerTick:                  false,
 		},
@@ -99,41 +108,36 @@ func registerPlayer(conn *websocket.Conn, playerName string) {
 		Timestamp:         timeHelper.Now(),
 	}
 
-	if err := conn.WriteJSON(registerMSG); err != nil {
-		panic(err)
-	}
+	log.Debugf("Registering player: %v\n", registerMSG)
+	send(conn, registerMSG)
 }
 
 func sendClientInfo(conn *websocket.Conn, msg models.GameMessage) {
-
-	if err := conn.WriteJSON(models.ClientInfoMSG{
+	clientInfoMSG := &models.ClientInfoMSG{
 		Type:                   "se.cygni.paintbot.api.event.GameStartingEvent",
 		Language:               "Go",
 		LanguageVersion:        runtime.Version(),
 		OperatingSystem:        runtime.GOOS,
 		OperatingSystemVersion: "",
-		ClientVersion:          "0.2",
+		ClientVersion:          "0.3",
 		ReceivingPlayerID:      msg.ReceivingPlayerID,
 		Timestamp:              timeHelper.Now(),
-	}); err != nil {
-		panic(err)
 	}
+	send(conn, clientInfoMSG)
 }
 
 func StartGame(conn *websocket.Conn) {
-	startGame := models.StartGameEvent{
+	startGame := &models.StartGameEvent{
 		Type:              "se.cygni.paintbot.api.request.StartGame",
 		ReceivingPlayerID: nil,
 		Timestamp:         timeHelper.Now(),
 	}
 
-	if err := conn.WriteJSON(startGame); err != nil {
-		panic(err)
-	}
+	send(conn, startGame)
 }
 
 func sendMove(conn *websocket.Conn, updateEvent models.MapUpdateEvent, action models.Action) {
-	moveEvent := models.RegisterMoveEvent{
+	moveEvent := &models.RegisterMoveEvent{
 		Type:              "se.cygni.paintbot.api.request.RegisterMove",
 		GameID:            updateEvent.GameID,
 		GameTick:          updateEvent.GameTick,
@@ -147,7 +151,5 @@ func sendMove(conn *websocket.Conn, updateEvent models.MapUpdateEvent, action mo
 		log.Debugf("send action: %s\n", marshal)
 	}
 
-	if err := conn.WriteJSON(moveEvent); err != nil {
-		panic(err)
-	}
+	send(conn, moveEvent)
 }
