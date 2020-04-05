@@ -96,7 +96,7 @@ type Map struct {
 	WorldTick           int             `json:"worldTick"`
 	CharacterInfos      []CharacterInfo `json:"characterInfos"`
 	PowerUpPositions    []int           `json:"powerUpPositions"`
-	ObstacleUpPositions []int           `json:"obstacleUpPositions"`
+	ObstacleUpPositions []int           `json:"obstaclePositions"`
 	CollisionInfos      []int           `json:"collisionInfos"`
 	ExplosionInfos      []int           `json:"explosionInfos"`
 }
@@ -114,7 +114,7 @@ type RegisterMoveEvent struct {
 	Type              string  `json:"type"`
 	GameID            string  `json:"gameId"`
 	GameTick          int     `json:"gameTick"`
-	Direction         string  `json:"direction"`
+	Action            string  `json:"direction"`
 	ReceivingPlayerID *string `json:"receivingPlayerId"`
 	Timestamp         int     `json:"timestamp"`
 }
