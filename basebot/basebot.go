@@ -1,41 +1,25 @@
-package main
+package basebot
 
 import (
 	"encoding/json"
 	"net/url"
-	"os"
+	"runtime"
 
 	"github.com/gorilla/websocket"
 	log "github.com/sirupsen/logrus"
 
 	"paintbot-client/models"
-	"paintbot-client/utilities/maputility"
 	"paintbot-client/utilities/timeHelper"
 )
 
-func init() {
-	log.SetFormatter(&log.TextFormatter{
-		ForceColors:            true,
-		ForceQuote:             true,
-		FullTimestamp:          true,
-		TimestampFormat:        "15:04:05.999",
-		DisableLevelTruncation: true,
-		PadLevelText:           true,
-		QuoteEmptyFields:       true,
-	})
-
-	log.SetOutput(os.Stdout)
-
-	log.SetLevel(log.InfoLevel)
+var u = url.URL{
+	Scheme: "ws",
+	//Host:   "server.paintbot.cygni.se:80",
+	Host: "localhost:8080",
+	Path: "/training",
 }
 
-func main() {
-	u := url.URL{
-		Scheme: "ws",
-		//Host:   "server.paintbot.cygni.se:80",
-		Host: "localhost:8080",
-		Path: "/training",
-	}
+func Start(playerName string, calculateMove func(event models.MapUpdateEvent) models.Action) {
 	log.Debugf("connecting to: %s\n", u.String())
 	conn, _, connectionError := websocket.DefaultDialer.Dial(u.String(), nil)
 	if connectionError != nil {
@@ -43,15 +27,20 @@ func main() {
 	}
 	defer conn.Close()
 
-	registerPlayer(conn)
+	registerPlayer(conn, playerName)
+
+	handleMapUpdate := func(conn *websocket.Conn, event models.MapUpdateEvent) {
+		action := calculateMove(event)
+		sendMove(conn, event, action)
+	}
 
 	more := true
 	for more {
-		more = !recv(conn)
+		more = !recv(conn, handleMapUpdate)
 	}
 }
 
-func recv(conn *websocket.Conn) (done bool) {
+func recv(conn *websocket.Conn, handleMapUpdate func(*websocket.Conn, models.MapUpdateEvent)) (done bool) {
 	if _, msg, err := conn.ReadMessage(); err != nil {
 		panic(err)
 	} else {
@@ -74,9 +63,8 @@ func recv(conn *websocket.Conn) (done bool) {
 			if err := json.Unmarshal(msg, &updateEvent); err != nil {
 				panic(err)
 			}
-
 			log.Debugf("Map update: %+v\n", updateEvent)
-			calculateMove(conn, updateEvent)
+			handleMapUpdate(conn, updateEvent)
 		case "se.cygni.paintbot.api.event.GameEndedEvent":
 			log.Infof("Game ended: %s\n", msg)
 			return true
@@ -85,61 +73,10 @@ func recv(conn *websocket.Conn) (done bool) {
 	return false
 }
 
-var moves = []models.Action{models.Explode, models.Left, models.Down, models.Right, models.Up} //, models.Stay}
-var lastDir = 0
-
-func calculateMove(conn *websocket.Conn, updateEvent models.MapUpdateEvent) {
-	utility := maputility.MapUtility{Map: updateEvent.Map, CurrentPlayerID: *updateEvent.ReceivingPlayerID}
-	me := utility.GetMyCharacterInfo()
-	move := models.Stay
-	if me.StunnedForGameTicks > 0 {
-		log.Warn("stunned")
-		sendMove(conn, updateEvent, models.Stay)
-		return
-	}
-
-	if me.CarryingPowerUp {
-		log.Warn("bombing")
-		sendMove(conn, updateEvent, models.Explode)
-		return
-	}
-
-	for i := range moves {
-		p := (i + lastDir) % len(moves)
-		if utility.CanIMoveInDirection(moves[p]) {
-			move = moves[p]
-			lastDir = p
-			break
-		}
-	}
-
-	sendMove(conn, updateEvent, move)
-}
-
-func sendMove(conn *websocket.Conn, updateEvent models.MapUpdateEvent, action models.Action) {
-	moveEvent := models.RegisterMoveEvent{
-		Type:              "se.cygni.paintbot.api.request.RegisterMove",
-		GameID:            updateEvent.GameID,
-		GameTick:          updateEvent.GameTick,
-		Action:            string(action),
-		ReceivingPlayerID: updateEvent.ReceivingPlayerID,
-		Timestamp:         timeHelper.Now(),
-	}
-	if marshal, err := json.Marshal(moveEvent); err != nil {
-		panic(err)
-	} else {
-		log.Debugf("send action: %s\n", marshal)
-	}
-
-	if err := conn.WriteJSON(moveEvent); err != nil {
-		panic(err)
-	}
-}
-
-func registerPlayer(conn *websocket.Conn) {
+func registerPlayer(conn *websocket.Conn, playerName string) {
 	registerMSG := models.RegisterPlayerEvent{
 		Type:       "se.cygni.paintbot.api.request.RegisterPlayer",
-		PlayerName: "Simple Go Bot",
+		PlayerName: playerName,
 		GameSettings: models.GameSettings{
 			MaxNOOFPlayers:                 5,
 			TimeInMSPerTick:                250,
@@ -172,10 +109,10 @@ func sendClientInfo(conn *websocket.Conn, msg models.GameMessage) {
 	if err := conn.WriteJSON(models.ClientInfoMSG{
 		Type:                   "se.cygni.paintbot.api.event.GameStartingEvent",
 		Language:               "Go",
-		LanguageVersion:        "1.14",
-		OperatingSystem:        "",
+		LanguageVersion:        runtime.Version(),
+		OperatingSystem:        runtime.GOOS,
 		OperatingSystemVersion: "",
-		ClientVersion:          "0.1",
+		ClientVersion:          "0.2",
 		ReceivingPlayerID:      msg.ReceivingPlayerID,
 		Timestamp:              timeHelper.Now(),
 	}); err != nil {
@@ -191,6 +128,26 @@ func StartGame(conn *websocket.Conn) {
 	}
 
 	if err := conn.WriteJSON(startGame); err != nil {
+		panic(err)
+	}
+}
+
+func sendMove(conn *websocket.Conn, updateEvent models.MapUpdateEvent, action models.Action) {
+	moveEvent := models.RegisterMoveEvent{
+		Type:              "se.cygni.paintbot.api.request.RegisterMove",
+		GameID:            updateEvent.GameID,
+		GameTick:          updateEvent.GameTick,
+		Action:            string(action),
+		ReceivingPlayerID: updateEvent.ReceivingPlayerID,
+		Timestamp:         timeHelper.Now(),
+	}
+	if marshal, err := json.Marshal(moveEvent); err != nil {
+		panic(err)
+	} else {
+		log.Debugf("send action: %s\n", marshal)
+	}
+
+	if err := conn.WriteJSON(moveEvent); err != nil {
 		panic(err)
 	}
 }
