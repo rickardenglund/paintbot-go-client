@@ -17,12 +17,12 @@ var mux sync.Mutex
 
 var gm models.GameMode
 
-func Start(playerName string, gameMode models.GameMode, calculateMove func(event models.MapUpdateEvent) models.Action) {
+func Start(playerName string, gameMode models.GameMode, desiredGameSettings *models.GameSettings, calculateMove func(event models.MapUpdateEvent) models.Action) {
 	gm = gameMode
 	conn := getWebsocketConnection(gameMode)
 	defer conn.Close()
 
-	registerPlayer(conn, playerName)
+	registerPlayer(conn, playerName, desiredGameSettings)
 
 	handleMapUpdate := func(conn *websocket.Conn, event models.MapUpdateEvent) {
 		action := calculateMove(event)
@@ -42,6 +42,8 @@ func recv(conn *websocket.Conn, handleMapUpdate func(*websocket.Conn, models.Map
 		panic(err)
 	}
 
+	log.Debugf("Received: %s\n", msg)
+
 	gameMSG := models.GameMessage{}
 	if err := json.Unmarshal(msg, &gameMSG); err != nil {
 		panic(err)
@@ -51,59 +53,72 @@ func recv(conn *websocket.Conn, handleMapUpdate func(*websocket.Conn, models.Map
 	case "se.cygni.paintbot.api.exception.InvalidMessage":
 		panic("invalid message: " + string(msg))
 	case "se.cygni.paintbot.api.response.PlayerRegistered":
-		log.Debug("Player Registered\n")
 		sendClientInfo(conn, gameMSG)
+		log.Infof("Player registered")
 		go heartbeat(conn, gameMSG.ReceivingPlayerID)
 		StartGame(conn)
-	case "se.cygni.paintbot.api.event.GameLinkEvent", "se.cygni.paintbot.api.event.GameStartingEvent":
-		log.Infof("Received: %s\n", msg)
+	case "se.cygni.paintbot.api.event.GameLinkEvent":
+		gamelinkEvent := &models.GameLinkEvent{}
+		if err := json.Unmarshal(msg, gamelinkEvent); err != nil {
+			panic(err)
+		}
+		log.Infof("Game can be viewed at: %s\n", gamelinkEvent.URL)
+	case "se.cygni.paintbot.api.event.GameStartingEvent":
+		log.Infof("Game started\n")
 	case "se.cygni.paintbot.api.event.MapUpdateEvent":
 		updateEvent := models.MapUpdateEvent{}
 		if err := json.Unmarshal(msg, &updateEvent); err != nil {
 			panic(err)
 		}
-		log.Debugf("Map update: %+v\n", updateEvent)
+		if updateEvent.GameTick%10 == 0 {
+			log.Infof("Game tick: %d\n", updateEvent.GameTick)
+		}
 		handleMapUpdate(conn, updateEvent)
+	case "se.cygni.paintbot.api.event.GameResultEvent":
+		event := models.GameResultEvent{}
+		if err := json.Unmarshal(msg, &event); err != nil {
+			panic(err)
+		}
+
+		log.Infof("### Game Results ###\n")
+		for _, player := range event.PlayerRanks {
+			log.Infof("%d: %s - %d\n", player.Rank, player.PlayerName, player.Points)
+		}
 	case "se.cygni.paintbot.api.event.GameEndedEvent":
-		log.Infof("Game ended: %s\n", msg)
+		event := models.GameEndedEvent{}
+		if err := json.Unmarshal(msg, &event); err != nil {
+			panic(err)
+		}
+
+		if event.PlayerWinnerID == *event.ReceivingPlayerID {
+			log.Info("You won the game")
+		}
 		if gm == models.Training {
 			return true
 		}
-	case "se.cygni.paintbot.api.event.GameResultEvent":
-		log.Infof("Game result: %s", msg)
 	case "se.cygni.paintbot.api.event.TournamentEndedEvent":
-		log.Infof("Tournament result: %s", msg)
+		event := models.TournamentEndedEvent{}
+		if err := json.Unmarshal(msg, &event); err != nil {
+			panic(err)
+		}
+
+		log.Infof("### Tournament Ended ###")
+		for _, player := range event.GameResult {
+			log.Infof("%s - %d\n", player.Name, player.Points)
+		}
 		return true
 	case "se.cygni.paintbot.api.response.HeartBeatResponse":
-		log.Debug("Heatbeat response")
 	default:
 		panic(fmt.Sprintf("unknown message: %s\n", msg))
 	}
 	return false
 }
 
-func registerPlayer(conn *websocket.Conn, playerName string) {
+func registerPlayer(conn *websocket.Conn, playerName string, desiredGameSettings *models.GameSettings) {
 	registerMSG := &models.RegisterPlayerEvent{
-		Type:       "se.cygni.paintbot.api.request.RegisterPlayer",
-		PlayerName: playerName,
-		GameSettings: models.GameSettings{
-			MaxNOOFPlayers:                 5,
-			TimeInMSPerTick:                250,
-			ObstaclesEnabled:               true,
-			PowerUpsEnabled:                true,
-			AddPowerUpLikelihood:           38,
-			RemovePowerUpLikelihood:        5,
-			TrainingGame:                   true,
-			PointsPerTileOwned:             1,
-			PointsPerCausedStun:            5,
-			NOOFTicksInvulnerableAfterStun: 3,
-			NOOFTicksStunned:               10,
-			StartObstacles:                 40,
-			StartPowerUps:                  41,
-			GameDurationInSeconds:          15,
-			ExplosionRange:                 4,
-			PointsPerTick:                  false,
-		},
+		Type:              "se.cygni.paintbot.api.request.RegisterPlayer",
+		PlayerName:        playerName,
+		GameSettings:      desiredGameSettings,
 		ReceivingPlayerID: nil,
 		Timestamp:         timeHelper.Now(),
 	}

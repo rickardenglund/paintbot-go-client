@@ -27,11 +27,11 @@ type GameSettings struct {
 }
 
 type RegisterPlayerEvent struct {
-	Type              string       `json:"type"`
-	PlayerName        string       `json:"playerName"`
-	GameSettings      GameSettings `json:"gameSettings"`
-	ReceivingPlayerID *string      `json:"receivingPlayerId"`
-	Timestamp         int          `json:"timestamp"`
+	Type              string        `json:"type"`
+	PlayerName        string        `json:"playerName"`
+	GameSettings      *GameSettings `json:"gameSettings"`
+	ReceivingPlayerID *string       `json:"receivingPlayerId"`
+	Timestamp         int           `json:"timestamp"`
 }
 
 type PlayerRegisteredEvent struct {
