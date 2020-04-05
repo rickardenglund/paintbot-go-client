@@ -14,8 +14,8 @@ import (
 
 var u = url.URL{
 	Scheme: "ws",
-	//Host:   "server.paintbot.cygni.se:80",
-	Host: "localhost:8080",
+	Host:   "server.paintbot.cygni.se:80",
+	//Host: "localhost:8080",
 	Path: "/training",
 }
 
