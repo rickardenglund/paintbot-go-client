@@ -3,6 +3,7 @@ package basebot
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"runtime"
 	"sync"
 
@@ -16,6 +17,22 @@ import (
 var mux sync.Mutex
 
 var gm models.GameMode
+
+func init() {
+	log.SetFormatter(&log.TextFormatter{
+		ForceColors:            true,
+		ForceQuote:             true,
+		FullTimestamp:          true,
+		TimestampFormat:        "15:04:05.999",
+		DisableLevelTruncation: true,
+		PadLevelText:           true,
+		QuoteEmptyFields:       true,
+	})
+
+	log.SetOutput(os.Stdout)
+
+	log.SetLevel(log.InfoLevel)
+}
 
 func Start(playerName string, gameMode models.GameMode, desiredGameSettings *models.GameSettings, calculateMove func(event models.MapUpdateEvent) models.Action) {
 	gm = gameMode

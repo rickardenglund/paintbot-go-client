@@ -1,10 +1,6 @@
 package main
 
 import (
-	"os"
-
-	log "github.com/sirupsen/logrus"
-
 	"paintbot-client/basebot"
 	"paintbot-client/models"
 	"paintbot-client/utilities/maputility"
@@ -39,22 +35,6 @@ func calculateMove(updateEvent models.MapUpdateEvent) models.Action {
 		}
 	}
 	return move
-}
-
-func init() {
-	log.SetFormatter(&log.TextFormatter{
-		ForceColors:            true,
-		ForceQuote:             true,
-		FullTimestamp:          true,
-		TimestampFormat:        "15:04:05.999",
-		DisableLevelTruncation: true,
-		PadLevelText:           true,
-		QuoteEmptyFields:       true,
-	})
-
-	log.SetOutput(os.Stdout)
-
-	log.SetLevel(log.InfoLevel)
 }
 
 // desired game settings can be changed to nil to get default settings
