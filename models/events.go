@@ -84,7 +84,7 @@ type CharacterInfo struct {
 	Name                string `json:"name"`
 	Points              int    `json:"points"`
 	Position            int    `json:"position"`
-	ColouredPosition    []int  `json:"colouredPosition"`
+	ColouredPosition    []int  `json:"colouredPositions"`
 	StunnedForGameTicks int    `json:"stunnedForGameTicks"`
 	ID                  string `json:"id"`
 	CarryingPowerUp     bool   `json:"carryingPowerUp"`
